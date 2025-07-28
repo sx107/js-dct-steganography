@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+<title>Steganography example</title>
+<script src="stegano.js"></script>
+</head>
+<body>
+Image with steganography-encoded data <b id = "data"></b>:<br>
+<canvas id="mc" width="1500" height="1500" style="height:600px;" class="unselectable">
+	Your browser does not support HTML5 canvas!
+</canvas>
+
+<script>
+	var steganoCtx, steganoCanvas;
+	var mainCanvas, mainCtx;
+
+	//dctSize (kernel size) is set in stegano.js
+
+	// Size of steganography data in blocks.
+	var w = 6;
+	var h = 1;
+	
+	// Position of DCT steganography. Use multiples of 16, or at least 8
+	var startX = 16*30;
+	var startY = 16*80;
+	
+	var data = [4, 8, 15, 16, 23, 42];
+	console.log("Raw data: ", data)
+	
+	data.forEach((b)=>{
+		let number = b.toString(16);
+		while (number.length < 2) {number = '0' + number;}
+		document.getElementById("data").innerHTML += "0x" + number + " ";
+	});
+	
+	data = hamming48_encode(data, 1); // Remember that hamming48 makes data string twice as long
+	data = steganoFillRandom(data, w*h*2); // Just in case.
+	console.log("Hamming data with manchester: ", data);
+	
+	window.addEventListener("load", () => {	
+		mainCanvas = document.getElementById("mc");
+		if (!mainCanvas.getContext) {console.log("No getContext"); return;}
+		mainCtx = mainCanvas.getContext("2d");
+		
+		steganoCanvas = document.createElement('canvas');
+		steganoCanvas.width = dctSize*w;
+		steganoCanvas.height = dctSize*h;
+		steganoCtx = steganoCanvas.getContext("2d");
+		
+		imgOriginal = new Image;
+		imgOriginal.src = "testOriginal.png";
+		imgDCTbasis0.src = "dct0.png";
+		imgDCTbasis1.src = "dct1.png";
+		
+		// On all images load complete
+		Promise.all(Array.from([imgOriginal, imgDCTbasis0, imgDCTbasis1]).map((image) => new Promise((resolve) => image.addEventListener("load", resolve)))).then(() => {
+			// Draw main image
+			mainCtx.drawImage(imgOriginal, 0, 0);
+			// Don't draw straight to original image!
+			// Draw to an empty canvas, then draw this canvas to your image.
+			bytesToDCT(steganoCtx, 0, 0, w, h, data);
+			
+			// First, calculate the mean color in the original image under the block
+			// BUT: due to CORS, locally getImageData does not work. So, I commented this block and just hard-coded meanR, meanG, meanB to something close
+			// Also, ideally, use mean for each DCT block separately
+			meanR = 78;
+			meanG = 132;
+			meanB = 50;
+			
+			/*
+			origImageData = mainCtx.getImageData(startX, startY, dctSize*w, dctSize*h).data;
+			var meanR, meanG, meanB;
+			for(let i = 0; i < origImageData.length; i+=4) {
+				meanR += origImageData[i];
+				meanG += origImageData[i+1];
+				meanB += origImageData[i+1];
+			}
+			meanR /= Math.floor((origImageData.length / 4));
+			meanG /= Math.floor((origImageData.length / 4));
+			meanB /= Math.floor((origImageData.length / 4));
+			*/
+
+			// Only luma channel is changed
+			mainCtx.globalCompositeOperation = "luminosity";
+			// Fill the rectangle under the steganography
+			mainCtx.fillStyle = "rgb("+meanR+","+meanG+","+meanB+")"
+			mainCtx.fillRect(startX, startY, dctSize*w, dctSize*h);
+			// Alpha < 0.3 does not work very stable, 1.0 is from black to white
+			mainCtx.globalAlpha = 0.7;
+			mainCtx.drawImage(steganoCanvas, startX, startY)
+		});
+	});
+</script>
+
+</body>
+</html>
